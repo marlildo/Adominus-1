@@ -1,0 +1,10 @@
+project_id = "mmizyhxqtlvrsnlokocl"
+
+[functions.process-email-queue]
+verify_jwt = true
+
+[functions.finance-ai]
+verify_jwt = false
+
+[functions.nutrition-ai]
+verify_jwt = false
