@@ -1,10 +1,24 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { supabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Eye, EyeOff, Zap } from "lucide-react";
+
+// ── Rate limiting helpers ─────────────────────────────────────────────────────
+const RL_KEY = "adominus_login_rl";
+const MAX_ATTEMPTS = 5;
+const BLOCK_MS = 15 * 60 * 1000; // 15 minutos
+
+function getRateLimit() {
+  try { return JSON.parse(localStorage.getItem(RL_KEY) || "{}") as { attempts?: number; blockedUntil?: number }; }
+  catch { return {}; }
+}
+function saveRateLimit(data: { attempts: number; blockedUntil?: number }) {
+  localStorage.setItem(RL_KEY, JSON.stringify(data));
+}
+function clearRateLimit() { localStorage.removeItem(RL_KEY); }
 
 export default function Login() {
   const navigate = useNavigate();
@@ -13,19 +27,64 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [blockTimer, setBlockTimer] = useState(0);
+
+  // Countdown do bloqueio
+  useEffect(() => {
+    const tick = () => {
+      const rl = getRateLimit();
+      if (rl.blockedUntil && Date.now() < rl.blockedUntil) {
+        setBlockTimer(Math.ceil((rl.blockedUntil - Date.now()) / 1000));
+      } else {
+        if (rl.blockedUntil) clearRateLimit();
+        setBlockTimer(0);
+      }
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+
+    // Bloquear se ainda em cooldown
+    const rl = getRateLimit();
+    if (rl.blockedUntil && Date.now() < rl.blockedUntil) {
+      setError(`Conta bloqueada. Aguarde ${Math.ceil((rl.blockedUntil - Date.now()) / 1000)} segundos.`);
+      return;
+    }
+
+    // Validação básica
+    if (!email.includes("@") || !email.includes(".")) {
+      setError("Digite um email válido.");
+      return;
+    }
+    if (password.length < 6) {
+      setError("A senha deve ter pelo menos 6 caracteres.");
+      return;
+    }
+
     setLoading(true);
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) {
-      setError(
-        error.message === "Invalid login credentials"
-          ? "Email ou senha incorretos."
-          : error.message
-      );
+      const attempts = (rl.attempts || 0) + 1;
+      if (attempts >= MAX_ATTEMPTS) {
+        const blockedUntil = Date.now() + BLOCK_MS;
+        saveRateLimit({ attempts, blockedUntil });
+        setError(`${MAX_ATTEMPTS} tentativas incorretas. Conta bloqueada por 15 minutos.`);
+      } else {
+        saveRateLimit({ attempts });
+        const restantes = MAX_ATTEMPTS - attempts;
+        setError(
+          error.message === "Invalid login credentials"
+            ? `Email ou senha incorretos. ${restantes} tentativa${restantes > 1 ? "s" : ""} restante${restantes > 1 ? "s" : ""}.`
+            : error.message
+        );
+      }
     } else {
+      clearRateLimit();
       navigate("/");
     }
     setLoading(false);

@@ -19,10 +19,38 @@ export default function Cadastro() {
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
-    if (password.length < 6) {
-      setError("A senha deve ter pelo menos 6 caracteres.");
+
+    // Validação de nome
+    if (name.trim().length < 2) {
+      setError("Digite seu nome completo (mínimo 2 caracteres).");
       return;
     }
+    if (name.trim().length > 50) {
+      setError("Nome muito longo. Máximo de 50 caracteres.");
+      return;
+    }
+
+    // Validação de email
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      setError("Digite um email válido.");
+      return;
+    }
+
+    // Validação de senha forte
+    if (password.length < 8) {
+      setError("A senha deve ter pelo menos 8 caracteres.");
+      return;
+    }
+    if (!/[A-Z]/.test(password)) {
+      setError("A senha deve ter pelo menos uma letra maiúscula.");
+      return;
+    }
+    if (!/[0-9]/.test(password)) {
+      setError("A senha deve ter pelo menos um número.");
+      return;
+    }
+
     setLoading(true);
     const { error } = await supabase.auth.signUp({
       email,

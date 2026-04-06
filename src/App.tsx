@@ -7,6 +7,7 @@ import { useEffect } from "react";
 import { Layout } from "@/components/Layout";
 import { useAppStore } from "@/store/useAppStore";
 import { AuthProvider, useAuth } from "@/hooks/useAuth";
+import { useInactivityLogout } from "@/hooks/useInactivityLogout";
 import { DataSync } from "@/hooks/useDataSync";
 import { RealtimeSync } from "@/hooks/useRealtimeSync";
 import { NotificationScheduler } from "@/hooks/useNotifications";
@@ -66,6 +67,8 @@ function PublicOnlyRoute({ children }: { children: React.ReactNode }) {
 
 function AppInner() {
   const { theme } = useAppStore();
+  const { session } = useAuth();
+  useInactivityLogout(!!session);
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", theme === "dark");
