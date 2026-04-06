@@ -3,11 +3,12 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Layout } from "@/components/Layout";
 import { useAppStore } from "@/store/useAppStore";
 import { AuthProvider, useAuth } from "@/hooks/useAuth";
 import { useInactivityLogout } from "@/hooks/useInactivityLogout";
+import Onboarding, { isOnboardingDone } from "@/pages/Onboarding";
 import { DataSync } from "@/hooks/useDataSync";
 import { RealtimeSync } from "@/hooks/useRealtimeSync";
 import { NotificationScheduler } from "@/hooks/useNotifications";
@@ -65,10 +66,38 @@ function PublicOnlyRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function OfflineBanner() {
+  const [offline, setOffline] = useState(!navigator.onLine);
+  useEffect(() => {
+    const on = () => setOffline(false);
+    const off = () => setOffline(true);
+    window.addEventListener("online", on);
+    window.addEventListener("offline", off);
+    return () => { window.removeEventListener("online", on); window.removeEventListener("offline", off); };
+  }, []);
+  if (!offline) return null;
+  return (
+    <div style={{
+      position: "fixed", top: 0, left: 0, right: 0, zIndex: 9999,
+      background: "#C10801", color: "#FFFFFF",
+      padding: "8px 16px", textAlign: "center", fontSize: 13, fontWeight: 600,
+    }}>
+      ⚡ Sem conexão — você está offline. Os dados serão sincronizados quando a internet voltar.
+    </div>
+  );
+}
+
 function AppInner() {
   const { theme } = useAppStore();
-  const { session } = useAuth();
+  const { session, loading } = useAuth();
   useInactivityLogout(!!session);
+
+  // Onboarding: mostra apenas para usuários logados que ainda não passaram
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  useEffect(() => {
+    if (session && !loading && !isOnboardingDone()) setShowOnboarding(true);
+    if (!session) setShowOnboarding(false);
+  }, [session, loading]);
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", theme === "dark");
@@ -76,8 +105,11 @@ function AppInner() {
     localStorage.setItem("igris-theme", theme);
   }, [theme]);
 
+  if (showOnboarding) return <Onboarding />;
+
   return (
     <>
+      <OfflineBanner />
       <DataSync />
       <RealtimeSync />
       <NotificationScheduler />

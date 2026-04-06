@@ -1,63 +1,84 @@
-// Dominus Notification Worker — handles scheduled daily-summary notifications.
-// Registered manually at /notification-worker.js (separate from the PWA cache SW).
+// ADOMINUS Notification Worker — lembretes inteligentes de hábitos, tarefas e foco.
 
-let alarmTime = null;       // "HH:MM" string set via postMessage
-let lastNotifDate = null;   // ISO date string of last fired notification
+let alarmTime    = null;  // "HH:MM" resumo diário
+let lastNotifDate = null; // ISO date do último envio
+
+// Horários fixos de lembretes (HH:MM)
+const HABIT_REMINDER_TIME  = "08:00"; // manhã — lembrete de hábitos
+const TASK_REMINDER_TIME   = "13:00"; // tarde  — tarefas pendentes
+const FOCUS_REMINDER_TIME  = "19:00"; // noite  — sugestão de foco
+
+const sentToday = { habit: null, task: null, focus: null, summary: null };
+
+function todayStr() { return new Date().toISOString().split("T")[0]; }
+function currentHHMM() {
+  const now = new Date();
+  return `${String(now.getHours()).padStart(2,"0")}:${String(now.getMinutes()).padStart(2,"0")}`;
+}
+
+function showNotif(title, body, tag, url = "/") {
+  return self.registration.showNotification(title, {
+    body, icon: "/icons/icon-192.png", badge: "/icons/icon-192.png",
+    tag, renotify: true, data: { url },
+  });
+}
 
 self.addEventListener("message", (event) => {
   if (event.data?.type === "SET_ALARM") {
     alarmTime = event.data.time;
     lastNotifDate = event.data.lastNotifDate ?? null;
   }
-  if (event.data?.type === "NOTIF_SENT") {
-    lastNotifDate = event.data.date;
-  }
+  if (event.data?.type === "NOTIF_SENT") { lastNotifDate = event.data.date; }
   if (event.data?.type === "SHOW_SUMMARY") {
     const { pendingTasks, pendingHabits, date } = event.data;
     const lines = [];
-    if (pendingTasks > 0) lines.push(`📋 ${pendingTasks} tarefa${pendingTasks !== 1 ? "s" : ""} para hoje`);
+    if (pendingTasks  > 0) lines.push(`📋 ${pendingTasks} tarefa${pendingTasks  !== 1 ? "s" : ""} pendente${pendingTasks  !== 1 ? "s" : ""}`);
     if (pendingHabits > 0) lines.push(`🔥 ${pendingHabits} hábito${pendingHabits !== 1 ? "s" : ""} por completar`);
     const body = lines.length ? lines.join("  •  ") : "Tudo em dia, guerreiro! 🏆";
-
-    self.registration.showNotification("☀️ Resumo Diário — Dominus", {
-      body,
-      icon: "/icons/icon-192.png",
-      badge: "/icons/icon-192.png",
-      tag: "daily-summary",
-      renotify: true,
-      data: { url: "/" },
-    });
-
-    self.clients.matchAll({ includeUncontrolled: true, type: "window" }).then((clients) => {
-      clients.forEach((c) => c.postMessage({ type: "NOTIF_SENT", date }));
-    });
+    showNotif("☀️ Resumo Diário — ADOMINUS", body, "daily-summary");
+    self.clients.matchAll({ includeUncontrolled: true, type: "window" })
+      .then((clients) => clients.forEach((c) => c.postMessage({ type: "NOTIF_SENT", date })));
   }
 });
 
-// Check every 60 seconds if it's time to fire
+// Verifica a cada 60 s se é hora de disparar algum lembrete
 setInterval(() => {
-  if (!alarmTime) return;
-  const now = new Date();
-  const hh = String(now.getHours()).padStart(2, "0");
-  const mm = String(now.getMinutes()).padStart(2, "0");
-  const today = now.toISOString().split("T")[0];
+  const hhmm = currentHHMM();
+  const today = todayStr();
 
-  if (`${hh}:${mm}` === alarmTime && lastNotifDate !== today) {
+  // 🌅 Lembrete de hábitos — 08:00
+  if (hhmm === HABIT_REMINDER_TIME && sentToday.habit !== today) {
+    sentToday.habit = today;
+    showNotif("🔥 Hora dos seus hábitos!", "Comece o dia forte, guerreiro. Seus hábitos aguardam.", "habit-reminder", "/habitos");
+  }
+
+  // 📋 Lembrete de tarefas — 13:00
+  if (hhmm === TASK_REMINDER_TIME && sentToday.task !== today) {
+    sentToday.task = today;
+    self.clients.matchAll({ includeUncontrolled: true, type: "window" }).then((clients) => {
+      if (clients.length === 0) {
+        showNotif("📋 Tarefas pendentes!", "Você tem tarefas para hoje. Abra o ADOMINUS e conquiste.", "task-reminder", "/tarefas");
+      } else {
+        clients.forEach((c) => c.postMessage({ type: "REQUEST_SUMMARY" }));
+      }
+    });
+  }
+
+  // 🌳 Sugestão de foco — 19:00
+  if (hhmm === FOCUS_REMINDER_TIME && sentToday.focus !== today) {
+    sentToday.focus = today;
+    showNotif("🌳 Sessão de foco!", "Dedique 25 minutos ao que importa. Plante sua árvore hoje.", "focus-reminder", "/focus-tree");
+  }
+
+  // ⏰ Resumo diário — horário configurado pelo usuário
+  if (alarmTime && hhmm === alarmTime && lastNotifDate !== today) {
     lastNotifDate = today;
     self.clients.matchAll({ includeUncontrolled: true, type: "window" }).then((clients) => {
       if (clients.length === 0) {
-        // App is closed — generic nudge
-        self.registration.showNotification("☀️ Resumo Diário — Dominus", {
-          body: "Abra o app para ver suas tarefas e hábitos de hoje.",
-          icon: "/icons/icon-192.png",
-          badge: "/icons/icon-192.png",
-          tag: "daily-summary",
-          renotify: true,
-        });
-        return;
+        showNotif("☀️ Resumo Diário — ADOMINUS", "Abra o app para ver seu progresso de hoje.", "daily-summary");
+      } else {
+        clients.forEach((c) => c.postMessage({ type: "REQUEST_SUMMARY" }));
       }
-      // App is open — ask for rich summary
-      clients.forEach((c) => c.postMessage({ type: "REQUEST_SUMMARY" }));
     });
   }
 }, 60_000);
